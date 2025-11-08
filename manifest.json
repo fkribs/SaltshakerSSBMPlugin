@@ -1,0 +1,10 @@
+{
+  "id": "slippi:ssbm",
+  "version": "1.0.0",
+  "entry": "dist/index.js",
+  "permissions": [
+    "resource:slippi:user.read",
+    "bridge:file.read"
+  ],
+  "displayName": "SSBM Plugin"
+}

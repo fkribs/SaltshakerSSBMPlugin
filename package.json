@@ -1,0 +1,26 @@
+{
+  "name": "@saltshaker/plugin-ssbm",
+  "version": "1.0.0",
+  "description": "Saltshaker plugin for Slippi/Dolphin.",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "manifest.json",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rimraf dist && rimraf -g \"*.tgz\"",
+    "build": "esbuild src/index.js --bundle --platform=node --target=node18 --outfile=dist/index.js --minify --sourcemap",
+    "bundle": "npm run clean && npm run build && npm pack",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@slippi/slippi-js": "^5.0.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "rimraf": "^6.0.0"
+  }
+}
