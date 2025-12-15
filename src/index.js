@@ -1,15 +1,24 @@
+// dist/index.js (bundled output)
 const SSBMPlugin = {
   async onInit(api) {
     api.log("[SSBMPlugin] Initializing...");
 
-    // Read connect code from host
-    const user = await api.host.get("slippi:user");
-    api.log(`Connect code: ${user.connectCode}`);
+    // 1) Read Slippi connect code via generic file bridge
+    const user = await api.host.file.readJson("slippiUserFile");
 
-    // Subscribe to Dolphin events
-    await api.host.invoke("dolphin.subscribe", { events: ["GameStart", "GameEnd"] });
+    if (user?.connectCode) {
+      api.log(`Connect code: ${user.connectCode}`);
+      api.sendEvent("setSession", user.connectCode);
+    } else {
+      api.log("No connect code found");
+    }
 
-    // Listen for forwarded events
+    // 2) Subscribe to Dolphin events via generic dolphin bridge
+    await api.host.dolphin.subscribe({
+      events: ["GameStart", "GameEnd"]
+    });
+
+    // 3) Listen for forwarded Dolphin events
     api.on("dolphin:GameStart", (game) => {
       api.log("[SSBMPlugin] Game started", game);
       api.sendEvent("game-start", game);
@@ -22,8 +31,9 @@ const SSBMPlugin = {
   },
 
   onUnload() {
+    // Optional: if you later add dolphin.unsubscribe()
     api.log("[SSBMPlugin] Shutting down...");
-  },
+  }
 };
 
 module.exports = SSBMPlugin;
