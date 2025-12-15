@@ -1,56 +1,39 @@
-// index.js
-const DolphinManager = require("./dolphinManager");
-const { SlpStream, SlpParser, SlpStreamEvent } = require("@slippi/slippi-js");
-
-let dolphinManager = null;
-let slippiManager = null;
-
+// dist/index.js (bundled output)
 const SSBMPlugin = {
-  /**
-   * Called when the plugin is loaded
-   * @param {object} context - Provided by the Saltshaker runtime
-   *  context.windowManager  → lets you send events to the renderer
-   *  context.pluginEvents   → event emitter for plugin <-> client messages
-   */
-  onInit(context) {
-    console.log("[SSBMPlugin] Initializing...");
+  async onInit(api) {
+    api.log("[SSBMPlugin] Initializing...");
 
-    // Set up Slippi data pipeline
-    slippiManager = new SlpStream();
-    const parser = new SlpParser();
+    // 1) Read Slippi connect code via generic file bridge
+    const user = await api.host.file.readJson("slippiUserFile");
 
-    // Whenever Dolphin sends a new command, pipe it to the parser
-    slippiManager.on(SlpStreamEvent.COMMAND, (evt) => {
-      parser.handleCommand(evt.command, evt.payload);
+    if (user?.connectCode) {
+      api.log(`Connect code: ${user.connectCode}`);
+      api.sendEvent("setSession", user.connectCode);
+    } else {
+      api.log("No connect code found");
+    }
+
+    // 2) Subscribe to Dolphin events via generic dolphin bridge
+    await api.host.dolphin.subscribe({
+      events: ["GameStart", "GameEnd"]
     });
 
-    // Initialize Dolphin connection layer
-    dolphinManager = new DolphinManager(context.windowManager, slippiManager);
-
-    // Optionally: listen for parsed game events
-    parser.on("gameStart", (game) => {
-      console.log("[SSBMPlugin] Game started!", game);
-      context.pluginEvents.emit("game-start", game);
+    // 3) Listen for forwarded Dolphin events
+    api.on("dolphin:GameStart", (game) => {
+      api.log("[SSBMPlugin] Game started", game);
+      api.sendEvent("game-start", game);
     });
 
-    parser.on("gameEnd", (game) => {
-      console.log("[SSBMPlugin] Game ended.");
-      context.pluginEvents.emit("game-end", game);
+    api.on("dolphin:GameEnd", () => {
+      api.log("[SSBMPlugin] Game ended");
+      api.sendEvent("game-end");
     });
-
-    // Begin connecting
-    dolphinManager.connect();
   },
 
-  /**
-   * Called when the plugin is unloaded or disabled
-   */
   onUnload() {
-    console.log("[SSBMPlugin] Shutting down...");
-    if (dolphinManager) dolphinManager.disconnect();
-    dolphinManager = null;
-    slippiManager = null;
-  },
+    // Optional: if you later add dolphin.unsubscribe()
+    api.log("[SSBMPlugin] Shutting down...");
+  }
 };
 
 module.exports = SSBMPlugin;
