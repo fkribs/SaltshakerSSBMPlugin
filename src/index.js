@@ -7,8 +7,8 @@ const SSBMPlugin = {
     const user = await api.host.file.readJson("slippiUserFile");
 
     if (user?.connectCode) {
-      api.log(`Connect code: ${user.connectCode}`);
-      api.sendEvent("setSession", user.connectCode);
+      api.log(`Connect code: ${user.uid}`);
+      api.sendEvent("setSession", user.uid);
     } else {
       api.log("No connect code found");
     }
