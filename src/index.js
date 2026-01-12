@@ -17,15 +17,26 @@ const SSBMPlugin = {
       api.log(`[SSBMPlugin] uid loaded: ${uid}`);
     }
 
-    // 2) Subscribe to Dolphin events
-    await api.host.dolphin.subscribe({ events: ["GameStart", "GameEnd"] });
+    // 2) Subscribe to Dolphin events (include Disconnected + Error)
+    await api.host.dolphin.subscribe({ events: ["GameStart", "GameEnd", "Disconnected", "Error"] });
 
-    // Helper: derive roomCode from game payload
     function getRoomCodeFromGame(game) {
       const matchId = game?.matchInfo?.matchId;
       const tiebreakerNumber = game?.matchInfo?.tiebreakerNumber;
       if (!matchId || typeof tiebreakerNumber !== "number") return null;
       return `${matchId}-${tiebreakerNumber}`;
+    }
+
+    function emitDisconnectIfConnected(reason) {
+      if (disposing) return;
+      if (!uid) return;
+      if (!currentRoomCode) return;
+
+      const roomCode = currentRoomCode;
+      currentRoomCode = null;
+
+      api.log(`[SSBMPlugin] disconnect(${roomCode}, ${uid}) reason=${reason || "unknown"}`);
+      api.sendEvent("disconnect", roomCode, uid);
     }
 
     const onGameStart = (game) => {
@@ -52,21 +63,27 @@ const SSBMPlugin = {
       api.sendEvent("connect", roomCode, uid);
     };
 
-    const onGameEnd = () => {
-      if (disposing) return;
-      if (!uid) return;
-      if (!currentRoomCode) return;
+    const onGameEnd = (_payload) => {
+      emitDisconnectIfConnected("game-end");
+    };
 
-      const roomCode = currentRoomCode;
-      currentRoomCode = null;
+    const onDolphinDisconnected = () => {
+      // Rage quit / Dolphin closed / Slippi stream severed.
+      emitDisconnectIfConnected("dolphin-disconnected");
+    };
 
-      api.log(`[SSBMPlugin] disconnect(${roomCode}, ${uid})`);
-      api.sendEvent("disconnect", roomCode, uid);
+    const onDolphinError = (err) => {
+      // Conservative: treat as disconnect if we were “in game”.
+      // If you find false positives, remove this and rely on Disconnected only.
+      api.log("[SSBMPlugin] dolphin error", err);
+      emitDisconnectIfConnected("dolphin-error");
     };
 
     // 3) Register forwarded Dolphin events
     const disposeStart = api.on("dolphin:GameStart", onGameStart);
     const disposeEnd = api.on("dolphin:GameEnd", onGameEnd);
+    const disposeDisc = api.on("dolphin:Disconnected", onDolphinDisconnected);
+    const disposeErr = api.on("dolphin:Error", onDolphinError);
 
     // 4) Provide onDispose for the harness
     this.onDispose = async () => {
@@ -85,11 +102,13 @@ const SSBMPlugin = {
       // Stop receiving forwarded events
       try { disposeStart(); } catch (e) { api.log("[SSBMPlugin] disposeStart error", e); }
       try { disposeEnd(); } catch (e) { api.log("[SSBMPlugin] disposeEnd error", e); }
+      try { disposeDisc(); } catch (e) { api.log("[SSBMPlugin] disposeDisc error", e); }
+      try { disposeErr(); } catch (e) { api.log("[SSBMPlugin] disposeErr error", e); }
 
-      // Unsubscribe from Dolphin upstream events if your host supports it
+      // Unsubscribe upstream
       if (api.host?.dolphin?.unsubscribe) {
         try {
-          await api.host.dolphin.unsubscribe({ events: ["GameStart", "GameEnd"] });
+          await api.host.dolphin.unsubscribe({ events: ["GameStart", "GameEnd", "Disconnected", "Error"] });
         } catch (e) {
           api.log("[SSBMPlugin] dolphin.unsubscribe failed (non-fatal)", e);
         }
@@ -99,9 +118,7 @@ const SSBMPlugin = {
     };
   },
 
-  // This is what PluginManager should call (standardize on this name)
   async onDispose() {
-    // If PluginManager calls exported onDispose, we forward to the instance disposer we defined in onInit
     if (typeof this.onDispose === "function") return this.onDispose();
   }
 };
