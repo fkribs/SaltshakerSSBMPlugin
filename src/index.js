@@ -7,6 +7,33 @@ const SSBMPlugin = {
     let currentRoomCode = null;
     let disposing = false;
 
+    // Setting: Hang up on game end (default true)
+    let hangupOnGameEnd = true;
+
+    try {
+      if (api.settings?.get) {
+        hangupOnGameEnd = (await api.settings.get("hangupOnGameEnd", true)) === true;
+      }
+    } catch (e) {
+      api.log("[SSBMPlugin] Failed to read setting hangupOnGameEnd; defaulting to true", e);
+      hangupOnGameEnd = true;
+    }
+
+    // Optional: react to live changes (if your harness supports api.settings.onChange)
+    let disposeSetting = null;
+    try {
+      if (api.settings?.onChange) {
+        disposeSetting = api.settings.onChange(({ key, value }) => {
+          if (key === "hangupOnGameEnd") {
+            hangupOnGameEnd = value === true;
+            api.log(`[SSBMPlugin] setting hangupOnGameEnd=${hangupOnGameEnd}`);
+          }
+        });
+      }
+    } catch (e) {
+      api.log("[SSBMPlugin] Failed to subscribe to settings changes (non-fatal)", e);
+    }
+
     // 1) Read Slippi user info (uid) via file bridge
     const user = await api.host.file.readJson("slippiUserFile");
     uid = user?.uid;
@@ -64,6 +91,10 @@ const SSBMPlugin = {
     };
 
     const onGameEnd = (_payload) => {
+      if (!hangupOnGameEnd) {
+        api.log("[SSBMPlugin] GameEnd received; hangupOnGameEnd=false, leaving call connected.");
+        return;
+      }
       emitDisconnectIfConnected("game-end");
     };
 
@@ -74,7 +105,6 @@ const SSBMPlugin = {
 
     const onDolphinError = (err) => {
       // Conservative: treat as disconnect if we were “in game”.
-      // If you find false positives, remove this and rely on Disconnected only.
       api.log("[SSBMPlugin] dolphin error", err);
       emitDisconnectIfConnected("dolphin-error");
     };
@@ -104,6 +134,9 @@ const SSBMPlugin = {
       try { disposeEnd(); } catch (e) { api.log("[SSBMPlugin] disposeEnd error", e); }
       try { disposeDisc(); } catch (e) { api.log("[SSBMPlugin] disposeDisc error", e); }
       try { disposeErr(); } catch (e) { api.log("[SSBMPlugin] disposeErr error", e); }
+
+      // Stop settings listener (if present)
+      try { disposeSetting?.(); } catch (e) { api.log("[SSBMPlugin] disposeSetting error", e); }
 
       // Unsubscribe upstream
       if (api.host?.dolphin?.unsubscribe) {
