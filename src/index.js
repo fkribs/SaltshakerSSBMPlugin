@@ -38,6 +38,25 @@ const SSBMPlugin = {
     const user = await api.host.file.readJson("slippiUserFile");
     uid = user?.uid;
 
+    const connectCode = user?.connectCode ?? user?.connect_code ?? null;
+    if (!connectCode) {
+      api.log("[SSBMPlugin] No connectCode found in slippiUserFile; setSession skipped.");
+    } else {
+      api.log(`[SSBMPlugin] connectCode loaded: ${connectCode}`);
+    
+      try {
+        if (api.setSession) {
+          await api.setSession(connectCode);
+          api.log("[SSBMPlugin] setSession(connectCode) sent.");
+        } else {
+          api.log("[SSBMPlugin] api.setSession not available (host not updated yet).");
+        }
+      } catch (e) {
+        api.log("[SSBMPlugin] setSession failed (non-fatal)", e);
+      }
+    }
+
+    
     if (!uid) {
       api.log("[SSBMPlugin] No uid found in slippiUserFile; connect/disconnect will be suppressed.");
     } else {
