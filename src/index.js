@@ -19,6 +19,28 @@ const SSBMPlugin = {
       hangupOnGameEnd = true;
     }
 
+    // Setting: Auto-launch Slippi on plugin start
+    let autoLaunchSlippi = false;
+    let slippiExePath = null;
+
+    try {
+      if (api.settings?.get) {
+        autoLaunchSlippi = (await api.settings.get("autoLaunchSlippi", false)) === true;
+        slippiExePath = (await api.settings.get("slippiExePath", null)) || null;
+      }
+    } catch (e) {
+      api.log("[SSBMPlugin] Failed to read launch settings (non-fatal)", e);
+    }
+
+    if (autoLaunchSlippi && slippiExePath) {
+      try {
+        await api.host.launchApp(slippiExePath);
+        api.log("[SSBMPlugin] Launched Slippi:", slippiExePath);
+      } catch (e) {
+        api.log("[SSBMPlugin] Failed to launch Slippi (non-fatal):", e?.message || e);
+      }
+    }
+
     // Optional: react to live changes (if your harness supports api.settings.onChange)
     let disposeSetting = null;
     try {
