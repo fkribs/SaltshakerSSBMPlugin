@@ -65,7 +65,7 @@ const SSBMPlugin = {
       api.log("[SSBMPlugin] No connectCode found in slippiUserFile; setSession skipped.");
     } else {
       api.log(`[SSBMPlugin] connectCode loaded: ${connectCode}`);
-    
+
       try {
         if (api.setSession) {
           await api.setSession(connectCode);
@@ -78,15 +78,34 @@ const SSBMPlugin = {
       }
     }
 
-    
     if (!uid) {
       api.log("[SSBMPlugin] No uid found in slippiUserFile; connect/disconnect will be suppressed.");
     } else {
       api.log(`[SSBMPlugin] uid loaded: ${uid}`);
     }
 
+    // Setting: Spectate folder
+    let spectateFolder = "{home}\\Documents\\Slippi\\Spectate";
+    try {
+      if (api.settings?.get) {
+        spectateFolder = (await api.settings.get("spectateFolder", spectateFolder)) || spectateFolder;
+      }
+    } catch (e) {
+      api.log("[SSBMPlugin] Failed to read spectateFolder setting (non-fatal)", e);
+    }
+
     // 2) Subscribe to Dolphin events (include Disconnected + Error)
     await api.host.dolphin.subscribe({ events: ["GameStart", "GameEnd", "Disconnected", "Error"] });
+
+    // 3) Subscribe to spectate folder
+    try {
+      if (api.host?.dolphin?.subscribeSpectate) {
+        await api.host.dolphin.subscribeSpectate(spectateFolder);
+        api.log("[SSBMPlugin] subscribeSpectate:", spectateFolder);
+      }
+    } catch (e) {
+      api.log("[SSBMPlugin] subscribeSpectate failed (non-fatal):", e?.message || e);
+    }
 
     function getRoomCodeFromGame(game) {
       const matchId = game?.matchInfo?.matchId;
@@ -145,18 +164,40 @@ const SSBMPlugin = {
     };
 
     const onDolphinError = (err) => {
-      // Conservative: treat as disconnect if we were “in game”.
       api.log("[SSBMPlugin] dolphin error", err);
       emitDisconnectIfConnected("dolphin-error");
     };
 
-    // 3) Register forwarded Dolphin events
+    const onSpectateStart = (settings) => {
+      if (disposing) return;
+      if (!uid) return;
+
+      const roomCode = getRoomCodeFromGame(settings);
+      if (!roomCode) {
+        api.log("[SSBMPlugin] SpectateStart: could not derive roomCode", settings?.matchInfo);
+        return;
+      }
+
+      if (currentRoomCode === roomCode) return;
+
+      if (currentRoomCode) {
+        api.log(`[SSBMPlugin] Spectate: switching from ${currentRoomCode} to ${roomCode}`);
+        api.sendEvent("disconnect", currentRoomCode, uid);
+      }
+
+      currentRoomCode = roomCode;
+      api.log(`[SSBMPlugin] SpectateStart: connect(${roomCode}, ${uid})`);
+      api.sendEvent("connect", roomCode, uid);
+    };
+
+    // 4) Register forwarded Dolphin events
     const disposeStart = api.on("dolphin:GameStart", onGameStart);
     const disposeEnd = api.on("dolphin:GameEnd", onGameEnd);
     const disposeDisc = api.on("dolphin:Disconnected", onDolphinDisconnected);
     const disposeErr = api.on("dolphin:Error", onDolphinError);
+    const disposeSpectate = api.on("dolphin:SpectateStart", onSpectateStart);
 
-    // 4) Provide onDispose for the harness
+    // 5) Provide onDispose for the harness
     this.onDispose = async () => {
       if (disposing) return;
       disposing = true;
@@ -175,6 +216,7 @@ const SSBMPlugin = {
       try { disposeEnd(); } catch (e) { api.log("[SSBMPlugin] disposeEnd error", e); }
       try { disposeDisc(); } catch (e) { api.log("[SSBMPlugin] disposeDisc error", e); }
       try { disposeErr(); } catch (e) { api.log("[SSBMPlugin] disposeErr error", e); }
+      try { disposeSpectate(); } catch (e) { api.log("[SSBMPlugin] disposeSpectate error", e); }
 
       // Stop settings listener (if present)
       try { disposeSetting?.(); } catch (e) { api.log("[SSBMPlugin] disposeSetting error", e); }
@@ -185,6 +227,14 @@ const SSBMPlugin = {
           await api.host.dolphin.unsubscribe({ events: ["GameStart", "GameEnd", "Disconnected", "Error"] });
         } catch (e) {
           api.log("[SSBMPlugin] dolphin.unsubscribe failed (non-fatal)", e);
+        }
+      }
+
+      if (api.host?.dolphin?.unsubscribeSpectate) {
+        try {
+          await api.host.dolphin.unsubscribeSpectate();
+        } catch (e) {
+          api.log("[SSBMPlugin] spectate unsubscribe failed (non-fatal)", e);
         }
       }
 
