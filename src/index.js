@@ -12,11 +12,11 @@ const SSBMPlugin = {
 
     try {
       if (api.settings?.get) {
-        hangupOnGameEnd = (await api.settings.get("hangupOnGameEnd", true)) === true;
+        hangupOnGameEnd = (await api.settings.get("hangupOnGameEnd", false)) === true;
       }
     } catch (e) {
-      api.log("[SSBMPlugin] Failed to read setting hangupOnGameEnd; defaulting to true", e);
-      hangupOnGameEnd = true;
+      api.log("[SSBMPlugin] Failed to read setting hangupOnGameEnd; defaulting to false", e);
+      hangupOnGameEnd = false;
     }
 
     // Setting: Auto-launch Slippi on plugin start
@@ -85,7 +85,9 @@ const SSBMPlugin = {
     }
 
     // Setting: Spectate folder
-    let spectateFolder = "{home}\\Documents\\Slippi\\Spectate";
+    let spectateFolder = process.platform === "darwin"
+      ? "{home}/Slippi/Spectate"
+      : "{home}\\Documents\\Slippi\\Spectate";
     try {
       if (api.settings?.get) {
         spectateFolder = (await api.settings.get("spectateFolder", spectateFolder)) || spectateFolder;
